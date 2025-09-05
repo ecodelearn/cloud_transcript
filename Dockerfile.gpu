@@ -1,0 +1,71 @@
+# Cloud Transcript - GPU-Enabled Dockerfile
+FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+
+# Metadados
+LABEL maintainer="Daniel Dias <ecodelearn@outlook.com>"
+LABEL description="Cloud Transcript GPU - Local Whisper with RTX 3060"
+LABEL version="1.0.0-gpu"
+
+# Evitar prompts interativos
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalar Python 3.11 e dependências
+RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-pip \
+    python3.11-dev \
+    python3.11-venv \
+    ffmpeg \
+    libsndfile1 \
+    git \
+    curl \
+    && ln -s /usr/bin/python3.11 /usr/bin/python \
+    && ln -s /usr/bin/pip3 /usr/bin/pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Definir diretório de trabalho
+WORKDIR /app
+
+# Instalar PyTorch com suporte CUDA first (importante!)
+RUN pip install --no-cache-dir \
+    torch==2.1.0+cu121 \
+    torchaudio==2.1.0+cu121 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Copiar requirements GPU
+COPY requirements.gpu.txt .
+
+# Instalar dependências Python
+RUN pip install --no-cache-dir -r requirements.gpu.txt
+
+# Copiar código fonte
+COPY src/ ./src/
+COPY .env.example .env
+
+# Criar diretórios necessários
+RUN mkdir -p uploads exports cache logs models
+
+# Download inicial do modelo Whisper (opcional, pode fazer lazy load)
+# RUN python -c "import whisper; whisper.load_model('large-v3')"
+
+# Usuário não-root
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Expor porta
+EXPOSE 8501
+
+# Variáveis ambiente GPU
+ENV PYTHONPATH=/app
+ENV STREAMLIT_SERVER_PORT=8501
+ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
+ENV CUDA_VISIBLE_DEVICES=0
+ENV TORCH_CUDA_ARCH_LIST="8.6"  # RTX 3060 architecture
+ENV USE_LOCAL_GPU=true
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=15s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+
+# Comando padrão
+CMD ["streamlit", "run", "src/app.py", "--server.address=0.0.0.0", "--server.port=8501"]

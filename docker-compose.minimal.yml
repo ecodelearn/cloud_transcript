@@ -1,0 +1,14 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.minimal
+    container_name: cloud_transcript_minimal
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./src:/app/src:ro
+      - ./data:/app/data
+    environment:
+      - PYTHONPATH=/app
+    restart: unless-stopped

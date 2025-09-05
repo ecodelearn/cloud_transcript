@@ -4,31 +4,66 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**cloud_transcrip** is a WhatsApp conversation transcription project that processes multiple audio files sequentially, allows insertion of textual context between audio segments, and exports organized transcripts.
+**cloud_transcript** evolved from a simple WhatsApp transcription tool into a **complete AI consultancy management platform**:
+
+### **Phase 1** (Current): GPU-powered transcription with RTX 3060
+### **Phase 2**: Project management for AI consultancy workflow  
+### **Phase 3**: Cloud sync with Supabase + VPS deployment
+### **Future**: Multi-tenant SaaS for consultants
+
+**Core Workflow**: WhatsApp initial contact → Google Meet (2-4h) → AI analysis → Automated proposal generation
 
 ## Architecture
 
 Based on the project specification in `NOVO_PROJETO_TRANSCRITOR.md`, this is a **Streamlit-based Python application** with the following structure:
 
 ```
-cloud_transcrip/
-├── app.py                 # Main Streamlit interface
-├── services/
-│   ├── transcription.py   # Transcription API integrations (Groq, Google Cloud, HuggingFace)
-│   ├── audio_processor.py # Audio file processing and conversion
-│   └── export_manager.py  # Export functionality (TXT, JSON, Markdown)
-├── components/
-│   ├── audio_uploader.py  # File upload component
-│   ├── block_editor.py    # Block editing interface with drag & drop
-│   └── export_panel.py    # Export options panel
-├── utils/
-│   ├── file_utils.py      # File handling utilities
-│   └── format_utils.py    # Data formatting utilities
-├── config.py              # Application configuration
-├── requirements.txt       # Python dependencies
-├── Dockerfile             # Container configuration
-├── docker-compose.yml     # Local development setup
-├── .env.example           # Environment variables template
+cloud_transcript/
+├── src/                          # Source code
+│   ├── app.py                   # Main Streamlit interface
+│   ├── config.py                # Application configuration
+│   ├── models/                  # Database models & schemas
+│   │   ├── database.py         # SQLite/Supabase connection
+│   │   ├── project.py          # Project model
+│   │   ├── meeting.py          # Meeting model
+│   │   └── insight.py          # AI insights model
+│   ├── services/
+│   │   ├── whisper_gpu.py      # Local GPU Whisper processing
+│   │   ├── transcription.py    # Multi-engine transcription
+│   │   ├── audio_processor.py  # Audio segmentation & processing
+│   │   ├── llm_analyzer.py     # AI insights extraction
+│   │   └── export_manager.py   # Multiple format exports
+│   ├── components/
+│   │   ├── project_manager.py  # Project CRUD interface
+│   │   ├── meeting_timeline.py # Meeting navigation
+│   │   ├── audio_uploader.py   # Drag & drop upload
+│   │   ├── transcription_viewer.py # Review/edit transcriptions
+│   │   └── insights_panel.py   # AI analysis results
+│   └── utils/
+│       ├── file_utils.py       # File handling utilities
+│       ├── database_utils.py   # Database helpers
+│       └── format_utils.py     # Data formatting utilities
+├── data/                         # Local data storage
+│   ├── cloud_transcript.db     # SQLite database
+│   ├── projects/               # Audio files organized by project
+│   └── models/                 # Whisper model cache
+├── docs/                        # Documentation & planning
+│   ├── context/                # Context files for development
+│   └── planning/               # Evolution, roadmap, database
+│       ├── EVOLUTION.md        # Phased development plan
+│       ├── DATABASE.md         # Database architecture
+│       ├── ROADMAP.md          # Sprint planning
+│       ├── AGENTS.md           # Development agents
+│       └── ISSUES.md           # Task tracking
+├── docker/                      # Docker configurations
+├── deploy/                      # Deployment scripts (Supabase, VPS)
+├── requirements.txt            # CPU dependencies
+├── requirements.gpu.txt        # GPU dependencies
+├── Dockerfile                  # CPU container
+├── Dockerfile.gpu              # GPU container
+├── docker-compose.yml          # CPU development
+├── docker-compose.gpu.yml      # GPU development
+├── .env.example               # Environment variables template
 └── README.md
 ```
 
@@ -136,3 +171,4 @@ python-dotenv
 - Cache transcription results to improve performance
 - Use Docker volumes for persistent data storage
 - Environment-based configuration for different deployment targets
+- to memorize

@@ -165,10 +165,9 @@ temp/
 exports/
 *.txt
 *.json
-*.md
 !README.md
 !CLAUDE.md
-!NOVO_PROJETO_TRANSCRITOR.md
+!docs/**/*.md
 
 # Cache
 .streamlit/
