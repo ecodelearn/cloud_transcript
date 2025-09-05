@@ -62,6 +62,14 @@ class WhisperGPUService:
             logger.error(f"Failed to load Whisper model: {str(e)}")
             return False
     
+    def load_model(self) -> bool:
+        """Public method to explicitly load the Whisper model"""
+        return self._load_model()
+    
+    def is_model_loaded(self) -> bool:
+        """Check if model is currently loaded"""
+        return self.model is not None
+    
     def _prepare_audio(self, audio_path: str) -> Tuple[str, float]:
         """Prepare audio file for Whisper processing"""
         audio_path = Path(audio_path)

@@ -41,6 +41,17 @@ def initialize_app():
         try:
             from services.whisper_gpu import get_whisper_service
             whisper_service_instance = get_whisper_service()
+            
+            # Try to preload the model for better UX
+            try:
+                logger.info("Attempting to preload Whisper model...")
+                if whisper_service_instance.load_model():
+                    logger.info("✅ Whisper model preloaded successfully")
+                else:
+                    logger.warning("⚠️ Whisper model preload failed - will load on first use")
+            except Exception as e:
+                logger.warning(f"Model preload failed: {e} - will load on first use")
+                
         except ImportError as e:
             logger.warning(f"Whisper service not available: {e}")
             whisper_service_instance = None
