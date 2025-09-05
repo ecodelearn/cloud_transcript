@@ -21,11 +21,8 @@ whisper_service = None
 Project = None
 Meeting = None
 
-@st.cache_resource
 def initialize_app():
     """Initialize application components"""
-    global db_instance, whisper_service, Project, Meeting
-    
     try:
         # Add src to Python path
         import sys
@@ -40,29 +37,30 @@ def initialize_app():
         # Initialize database
         init_database()
         
-        # Set globals
-        db_instance = get_db()
-        Project = ProjectModel
-        Meeting = MeetingModel
-        
         # Try to import Whisper (may fail on CPU-only systems)
         try:
             from services.whisper_gpu import get_whisper_service
-            whisper_service = get_whisper_service()
+            whisper_service_instance = get_whisper_service()
         except ImportError as e:
             logger.warning(f"Whisper service not available: {e}")
-            whisper_service = None
+            whisper_service_instance = None
         
         logger.info("App initialized successfully")
-        return True
+        return get_db(), ProjectModel, MeetingModel, whisper_service_instance
         
     except Exception as e:
         logger.error(f"App initialization failed: {str(e)}")
         st.error(f"❌ Initialization failed: {str(e)}")
-        return False
+        return None, None, None, None
 
-# Initialize app
-app_initialized = initialize_app()
+# Initialize app - cached version
+@st.cache_resource
+def get_app_components():
+    return initialize_app()
+
+# Get components
+db_instance, Project, Meeting, whisper_service = get_app_components()
+app_initialized = Project is not None
 
 
 def render_sidebar():
@@ -122,6 +120,11 @@ def render_sidebar():
 def render_projects_tab():
     """Render projects management tab"""
     st.markdown("### 📁 Gestão de Projetos")
+    
+    # Check if Project is available
+    if Project is None:
+        st.error("❌ Sistema não inicializado. Recarregue a página.")
+        return
     
     # Project creation form
     with st.expander("➕ Novo Projeto", expanded=False):
@@ -201,10 +204,19 @@ def render_meetings_tab():
     """Render meetings management tab"""
     st.markdown("### 📅 Meetings & Transcrições")
     
+    # Check if Project is available
+    if Project is None:
+        st.error("❌ Sistema não inicializado. Recarregue a página.")
+        return
+    
     # Project selection
-    projects = Project.get_all(limit=100)
-    if not projects:
-        st.warning("⚠️ Crie um projeto primeiro na aba Projetos")
+    try:
+        projects = Project.get_all(limit=100)
+        if not projects:
+            st.warning("⚠️ Crie um projeto primeiro na aba Projetos")
+            return
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar projetos: {str(e)}")
         return
     
     project_options = {f"{p.nome_cliente} ({p.empresa or 'Sem empresa'})": p.id for p in projects}
