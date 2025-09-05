@@ -325,8 +325,15 @@ def render_gpu_tab():
     """Render GPU testing and benchmarks tab"""
     st.markdown("### 🚀 GPU Performance & Testing")
     
+    global whisper_service
+    
+    if whisper_service is None:
+        st.error("❌ Whisper service not available")
+        st.info("💡 This may occur on CPU-only systems or if there are import issues.")
+        return
+    
     try:
-        whisper = get_whisper_service()
+        whisper = whisper_service
         gpu_stats = whisper.get_gpu_stats()
         
         # GPU Stats
