@@ -15,16 +15,45 @@ from pydub import AudioSegment
 logger = logging.getLogger(__name__)
 
 class WhisperGPUService:
-    """GPU-accelerated Whisper transcription service"""
+    """GPU-accelerated Whisper transcription service with smart model management"""
+    
+    # Available models configuration
+    AVAILABLE_MODELS = {
+        'turbo': {
+            'name': 'turbo',
+            'size': '39MB',
+            'speed': 'Fastest',
+            'quality': 'Good',
+            'description': 'Fastest transcription, good quality'
+        },
+        'medium': {
+            'name': 'medium', 
+            'size': '769MB',
+            'speed': 'Fast',
+            'quality': 'Better',
+            'description': 'Balanced speed and quality'
+        },
+        'large-v3': {
+            'name': 'large-v3',
+            'size': '2.88GB', 
+            'speed': 'Slower',
+            'quality': 'Best',
+            'description': 'Best quality, slower processing'
+        }
+    }
     
     def __init__(self):
         self.model = None
+        self.current_model_name = None
         self.device = self._get_device()
-        self.model_name = os.getenv('WHISPER_MODEL', 'large-v3')
         self.models_cache_dir = Path(__file__).parent.parent.parent / 'data' / 'models'
         self.models_cache_dir.mkdir(parents=True, exist_ok=True)
         
+        # Load active model preference (default: turbo for testing)
+        self.active_model = self._get_active_model()
+        
         logger.info(f"Whisper GPU Service initialized - Device: {self.device}")
+        logger.info(f"Active model: {self.active_model or 'None (models available on-demand)'}")
     
     def _get_device(self) -> str:
         """Determine best available device"""
@@ -38,28 +67,146 @@ class WhisperGPUService:
         
         return device
     
-    def _load_model(self) -> bool:
-        """Load Whisper model (lazy loading)"""
-        if self.model is not None:
-            return True
+    def _get_active_model(self) -> Optional[str]:
+        """Get active model from config file or environment"""
+        # Check environment variable first
+        env_model = os.getenv('WHISPER_MODEL')
+        if env_model and env_model in self.AVAILABLE_MODELS:
+            return env_model
+            
+        # Check config file
+        config_file = self.models_cache_dir / 'active_model.txt'
+        if config_file.exists():
+            try:
+                active = config_file.read_text().strip()
+                if active in self.AVAILABLE_MODELS:
+                    return active
+            except Exception as e:
+                logger.warning(f"Could not read active model config: {e}")
+        
+        # Default to turbo for testing (fast startup)
+        return 'turbo'
+    
+    def _set_active_model(self, model_name: str) -> bool:
+        """Set active model and save to config"""
+        if model_name not in self.AVAILABLE_MODELS:
+            logger.error(f"Unknown model: {model_name}")
+            return False
         
         try:
-            logger.info(f"Loading Whisper model: {self.model_name}")
+            config_file = self.models_cache_dir / 'active_model.txt'
+            config_file.write_text(model_name)
+            self.active_model = model_name
+            logger.info(f"Active model set to: {model_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Could not save active model config: {e}")
+            return False
+    
+    def get_available_models(self) -> Dict[str, Any]:
+        """Get information about all available models"""
+        models_status = {}
+        
+        for model_name, model_info in self.AVAILABLE_MODELS.items():
+            # Check if model is downloaded
+            model_files = list(self.models_cache_dir.glob(f"*{model_name}*"))
+            is_downloaded = len(model_files) > 0
+            
+            models_status[model_name] = {
+                **model_info,
+                'downloaded': is_downloaded,
+                'active': model_name == self.active_model,
+                'loaded': model_name == self.current_model_name
+            }
+        
+        return models_status
+    
+    def download_model(self, model_name: str) -> bool:
+        """Download a specific model"""
+        if model_name not in self.AVAILABLE_MODELS:
+            logger.error(f"Unknown model: {model_name}")
+            return False
+        
+        try:
+            logger.info(f"Downloading Whisper model: {model_name}")
+            whisper.load_model(model_name, download_root=str(self.models_cache_dir))
+            logger.info(f"Model {model_name} downloaded successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to download model {model_name}: {e}")
+            return False
+    
+    def delete_model(self, model_name: str) -> bool:
+        """Delete a downloaded model"""
+        if model_name not in self.AVAILABLE_MODELS:
+            return False
+        
+        try:
+            # Find and delete model files
+            model_files = list(self.models_cache_dir.glob(f"*{model_name}*"))
+            deleted_count = 0
+            
+            for model_file in model_files:
+                model_file.unlink()
+                deleted_count += 1
+            
+            if deleted_count > 0:
+                logger.info(f"Deleted {deleted_count} files for model {model_name}")
+                
+                # If this was the loaded model, clear it
+                if self.current_model_name == model_name:
+                    self.model = None
+                    self.current_model_name = None
+                
+                return True
+            else:
+                logger.warning(f"No files found for model {model_name}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to delete model {model_name}: {e}")
+            return False
+    
+    def switch_model(self, model_name: str) -> bool:
+        """Switch active model and optionally load it"""
+        if not self._set_active_model(model_name):
+            return False
+        
+        # If a model is currently loaded and it's different, unload it
+        if self.model and self.current_model_name != model_name:
+            logger.info(f"Unloading current model: {self.current_model_name}")
+            self.model = None
+            self.current_model_name = None
+        
+        return True
+    
+    def _load_model(self) -> bool:
+        """Load active Whisper model (lazy loading)"""
+        if self.model is not None and self.current_model_name == self.active_model:
+            return True
+        
+        if not self.active_model:
+            logger.error("No active model set")
+            return False
+        
+        try:
+            logger.info(f"Loading Whisper model: {self.active_model}")
             start_time = time.time()
             
             # Load model with GPU support
             self.model = whisper.load_model(
-                self.model_name,
+                self.active_model,
                 device=self.device,
                 download_root=str(self.models_cache_dir)
             )
             
+            self.current_model_name = self.active_model
             load_time = time.time() - start_time
-            logger.info(f"Model loaded successfully in {load_time:.2f}s")
+            logger.info(f"Model {self.active_model} loaded successfully in {load_time:.2f}s")
             return True
             
         except Exception as e:
-            logger.error(f"Failed to load Whisper model: {str(e)}")
+            logger.error(f"Failed to load Whisper model {self.active_model}: {str(e)}")
             return False
     
     def load_model(self) -> bool:
@@ -258,11 +405,13 @@ class WhisperGPUService:
             }
     
     def get_gpu_stats(self) -> Dict[str, Any]:
-        """Get GPU utilization stats"""
+        """Get GPU utilization stats and model information"""
         stats = {
             'device': self.device,
             'model_loaded': self.model is not None,
-            'model_name': self.model_name
+            'active_model': self.active_model,
+            'loaded_model': self.current_model_name,
+            'available_models': self.get_available_models()
         }
         
         if self.device == 'cuda' and torch.cuda.is_available():

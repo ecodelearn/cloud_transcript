@@ -41,16 +41,7 @@ def initialize_app():
         try:
             from services.whisper_gpu import get_whisper_service
             whisper_service_instance = get_whisper_service()
-            
-            # Try to preload the model for better UX
-            try:
-                logger.info("Attempting to preload Whisper model...")
-                if whisper_service_instance.load_model():
-                    logger.info("✅ Whisper model preloaded successfully")
-                else:
-                    logger.warning("⚠️ Whisper model preload failed - will load on first use")
-            except Exception as e:
-                logger.warning(f"Model preload failed: {e} - will load on first use")
+            logger.info("✅ Whisper service initialized - models available on-demand")
                 
         except ImportError as e:
             logger.warning(f"Whisper service not available: {e}")
@@ -333,8 +324,8 @@ def render_meetings_tab():
 
 
 def render_gpu_tab():
-    """Render GPU testing and benchmarks tab"""
-    st.markdown("### 🚀 GPU Performance & Testing")
+    """Render Whisper model management and testing tab"""
+    st.markdown("### 🤖 Whisper Model Management")
     
     global whisper_service
     
@@ -346,40 +337,123 @@ def render_gpu_tab():
     try:
         whisper = whisper_service
         gpu_stats = whisper.get_gpu_stats()
+        available_models = gpu_stats.get('available_models', {})
         
-        # GPU Stats
-        col1, col2 = st.columns(2)
-        
+        # Device Status
+        col1, col2, col3 = st.columns(3)
         with col1:
-            st.markdown("#### 📊 GPU Status")
-            st.json(gpu_stats)
-        
+            st.metric("Device", gpu_stats['device'].upper())
         with col2:
+            st.metric("Active Model", gpu_stats['active_model'] or "None")
+        with col3:
+            is_loaded = gpu_stats['model_loaded']
+            st.metric("Model Status", "✅ Loaded" if is_loaded else "⏳ Ready")
+        
+        st.markdown("---")
+        
+        # Model Management
+        st.markdown("#### 📦 Available Models")
+        
+        for model_name, model_info in available_models.items():
+            with st.expander(f"{model_info['name']} - {model_info['size']} ({model_info['speed']})"):
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.write(f"**Quality:** {model_info['quality']}")
+                    st.write(f"**Size:** {model_info['size']}")
+                
+                with col2:
+                    downloaded = model_info['downloaded']
+                    active = model_info['active']
+                    loaded = model_info['loaded']
+                    
+                    if active:
+                        st.success("🎯 Active")
+                    if loaded:
+                        st.success("✅ Loaded")
+                    if downloaded:
+                        st.info("💾 Downloaded")
+                    else:
+                        st.warning("📥 Not Downloaded")
+                
+                with col3:
+                    # Download/Delete actions
+                    if not downloaded:
+                        if st.button(f"📥 Download {model_name}", key=f"download_{model_name}"):
+                            with st.spinner(f"Downloading {model_name}..."):
+                                if whisper.download_model(model_name):
+                                    st.success(f"✅ {model_name} downloaded!")
+                                    st.experimental_rerun()
+                                else:
+                                    st.error(f"❌ Failed to download {model_name}")
+                    else:
+                        if st.button(f"🗑️ Delete {model_name}", key=f"delete_{model_name}"):
+                            if whisper.delete_model(model_name):
+                                st.success(f"✅ {model_name} deleted!")
+                                st.experimental_rerun()
+                            else:
+                                st.error(f"❌ Failed to delete {model_name}")
+                
+                with col4:
+                    # Activate/Load actions
+                    if downloaded and not active:
+                        if st.button(f"🎯 Activate {model_name}", key=f"activate_{model_name}"):
+                            if whisper.switch_model(model_name):
+                                st.success(f"✅ {model_name} activated!")
+                                st.experimental_rerun()
+                            else:
+                                st.error(f"❌ Failed to activate {model_name}")
+                    
+                    if active and not loaded:
+                        if st.button(f"⚡ Load {model_name}", key=f"load_{model_name}"):
+                            with st.spinner(f"Loading {model_name}..."):
+                                if whisper.load_model():
+                                    st.success(f"✅ {model_name} loaded!")
+                                    st.experimental_rerun()
+                                else:
+                                    st.error(f"❌ Failed to load {model_name}")
+        
+        st.markdown("---")
+        
+        # Performance Testing (only if model is loaded)
+        if gpu_stats['model_loaded']:
             st.markdown("#### ⚡ Performance Test")
             
-            test_duration = st.slider("Test Duration (seconds)", 10, 120, 30)
+            col1, col2 = st.columns(2)
+            with col1:
+                test_duration = st.slider("Test Duration (seconds)", 10, 120, 30)
             
-            if st.button("🏃 Run Benchmark"):
-                with st.spinner("Running GPU benchmark..."):
-                    try:
-                        benchmark_results = whisper.benchmark_performance(test_duration)
-                        
-                        if 'error' in benchmark_results:
-                            st.error(f"❌ Benchmark failed: {benchmark_results['error']}")
-                        else:
-                            st.success("✅ Benchmark completed!")
-                            st.json(benchmark_results)
+            with col2:
+                if st.button("🏃 Run Benchmark"):
+                    with st.spinner("Running performance benchmark..."):
+                        try:
+                            benchmark_results = whisper.benchmark_performance(test_duration)
                             
-                            # Performance metrics
-                            speed_multiplier = benchmark_results.get('speed_multiplier', 0)
-                            st.metric(
-                                "Processing Speed", 
-                                f"{speed_multiplier:.1f}x realtime",
-                                delta=f"{speed_multiplier - 1:.1f}x faster than realtime" if speed_multiplier > 1 else None
-                            )
-                            
-                    except Exception as e:
-                        st.error(f"❌ Benchmark error: {str(e)}")
+                            if 'error' in benchmark_results:
+                                st.error(f"❌ Benchmark failed: {benchmark_results['error']}")
+                            else:
+                                st.success("✅ Benchmark completed!")
+                                
+                                # Performance metrics
+                                speed_multiplier = benchmark_results.get('speed_multiplier', 0)
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.metric(
+                                        "Processing Speed", 
+                                        f"{speed_multiplier:.1f}x realtime"
+                                    )
+                                with col2:
+                                    st.metric(
+                                        "Performance",
+                                        "Excellent" if speed_multiplier > 2 else "Good" if speed_multiplier > 1 else "Slow"
+                                    )
+                                
+                                st.json(benchmark_results)
+                                
+                        except Exception as e:
+                            st.error(f"❌ Benchmark error: {str(e)}")
+        else:
+            st.info("💡 Load a model to enable performance testing")
         
         # File upload test
         st.markdown("#### 🎵 Test Audio Upload")
@@ -451,7 +525,7 @@ def main():
     tab1, tab2, tab3, tab4 = st.tabs([
         "📁 Projetos", 
         "📅 Meetings", 
-        "🚀 GPU Testing",
+        "🤖 Whisper Models",
         "📚 Documentation"
     ])
     
